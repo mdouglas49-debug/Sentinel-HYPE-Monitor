@@ -28,6 +28,11 @@ if (result.status !== 'SIGNAL_PREVIEW_ONLY') {
   process.exit(0);
 }
 // Cache key is one per completed candle, independent of BUY/SELL.
+writeFileSync('latest-signal.json', JSON.stringify({
+  ...result,
+  symbol: 'HYPE',
+  timeframe: '5m'
+}, null, 2));
 const candleKey = String(last.t);
 if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `candle_key=${candleKey}\n`);
 const message = [
