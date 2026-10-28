@@ -1,0 +1,11 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {proposal,decide} from './approval-core.mjs';
+const now=Date.parse('2026-10-28T18:00:00Z');
+const signal={status:'SIGNAL_PREVIEW_ONLY',symbol:'HYPE',timeframe:'5m',side:'BUY',entry:80,stop:79.8,target:80.5,candle_utc:'2026-10-28T17:55:00Z'};
+test('YES is paper only and one-shot',()=>{const p=proposal(signal,now);const a=decide(p,'YES','123','123',now+1000);assert.equal(a.status,'APPROVED_PAPER');assert.throws(()=>decide(a,'YES','123','123',now+2000));});
+test('NO rejects',()=>assert.equal(decide(proposal(signal,now),'NO','123','123',now).status,'REJECTED'));
+test('unauthorized actor blocked',()=>assert.throws(()=>decide(proposal(signal,now),'YES','bad','123',now)));
+test('expiry blocks approval',()=>assert.equal(decide(proposal(signal,now),'YES','123','123',now+90_000).status,'EXPIRED'));
+test('invalid stop rejected',()=>assert.throws(()=>proposal({...signal,stop:81},now)));
+test('stale candle rejected',()=>assert.throws(()=>proposal(signal,now+20*60_000)));
