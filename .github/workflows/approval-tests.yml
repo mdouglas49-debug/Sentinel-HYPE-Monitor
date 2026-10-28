@@ -5,6 +5,8 @@ on:
       - 'approval-core.mjs'
       - 'approval-core.test.mjs'
       - 'telegram-approval-server.mjs'
+      - 'tgcloud/handlers/**'
+      - 'tgcloud/lib/**'
       - '.github/workflows/approval-tests.yml'
   workflow_dispatch:
 permissions:
@@ -23,5 +25,7 @@ jobs:
           node --check approval-core.mjs
           node --check telegram-approval-server.mjs
           node --check approval-prototype.mjs
+          node --check tgcloud/handlers/message.js
+          node --check tgcloud/handlers/callback_query.js
       - name: Paper approval unit tests
         run: node --test approval-core.test.mjs
