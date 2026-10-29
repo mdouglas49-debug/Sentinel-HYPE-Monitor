@@ -1,8 +1,10 @@
-
 name: Sentinel HYPE read-only scan
 
 on:
   workflow_dispatch:
+  # UTC: two minutes after each five-minute candle boundary.
+  schedule:
+    - cron: '2-59/5 * * * *'
 
 permissions:
   contents: read
@@ -42,7 +44,7 @@ jobs:
         with:
           name: sentinel-paper-${{ github.run_id }}
           path: simulated-order.json
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 30
       - name: Check prior notification for this candle
         if: steps.scan.outputs.candle_key != ''
