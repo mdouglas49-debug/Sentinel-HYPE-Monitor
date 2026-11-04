@@ -34,6 +34,25 @@ Run `node test-paper-journal.mjs` to verify checkpoint recovery, modeled exits/P
 
 Changes to the paper engine or scanner workflow on main also trigger a verification run. These runs use the same alert deduplication and paper-only behavior as scheduled runs.
 
+## Telegram Yes/No paper approvals
+
+The opt-in approval bridge connects the existing Telegram Serverless bot to the
+same scanner workflow and private dashboard journal. With the repository variable
+`PAPER_APPROVALS_ENABLED=true`, the scanner sends owner-only YES / NO proposals
+instead of automatically creating new simulations. YES atomically saves a paper
+order with its approval time; NO or expiration saves no order. The next scanner
+run exports one approved order in the existing `simulated-order.json` format,
+advances the existing journal and risk account, and acknowledges it only after
+both artifact uploads succeed. Replays retain the same signal ID and timestamp.
+
+Approval mode defaults to false, preserving the current automatic simulation
+and text-alert behavior until the Serverless project is deployed and configured.
+The existing journal history, scanner strategy, schedule, dashboard, and live
+execution setting are preserved. No live trading endpoint is present.
+
+See [TELEGRAM-PAPER-APPROVALS.md](TELEGRAM-PAPER-APPROVALS.md) for the deployment
+sequence, credential names, recovery behavior, and verification commands.
+
 ## Controlled paper account and risk commands
 
 The journal now carries a separate controlled paper account (`portfolio`), starting when this version is first run. Existing independent signal results remain intact. Default paper-only limits are one open position, $2 modeled entry-to-stop loss including estimated fees/slippage, and a $25 daily cutoff. Each position is still 1 HYPE; these are test settings, not funded-account rules.
