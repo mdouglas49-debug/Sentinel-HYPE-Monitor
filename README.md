@@ -33,3 +33,17 @@ Journal restore/update/upload happens after notification steps and is attempted 
 Run `node test-paper-journal.mjs` to verify checkpoint recovery, modeled exits/P&L, duplicates, and missing-data handling. The engine and validation modules are generated from the private dashboard's TypeScript tracker; update both copies together when changing accounting rules.
 
 Changes to the paper engine or scanner workflow on main also trigger a verification run. These runs use the same alert deduplication and paper-only behavior as scheduled runs.
+
+## Controlled paper account and risk commands
+
+The journal now carries a separate controlled paper account (`portfolio`), starting when this version is first run. Existing independent signal results remain intact. Default paper-only limits are one open position, $2 modeled entry-to-stop loss including estimated fees/slippage, and a $25 daily cutoff. Each position is still 1 HYPE; these are test settings, not funded-account rules.
+
+Admission uses only information available before the modeled entry candle. A missing entry candle blocks late entry. Active positions with missing history block further entries. The daily measure is realized net P/L for the New York calendar day plus negative unrealized P/L on open positions; positive unrealized P/L is excluded. A cutoff locks new entries until the next New York day while existing brackets continue. Gaps, funding and real execution differences mean these limits are not guarantees.
+
+The private dashboard can explicitly dispatch a `paper_control` JSON input to this workflow. This requires its saved fine-grained token to have **Actions: read and write** on **Sentinel-HYPE-Monitor** only. Imports still work with Actions read-only. No Contents write permission, trading key or broker connection is required. Control-only dispatches skip scanning/Telegram and update only paper records.
+
+Commands carry a unique ID and requested timestamp, survive in the checkpoint, and ignore duplicates/stale requests. The dashboard shows QUEUED/UNKNOWN/FAILED until a saved checkpoint acknowledges the command as APPLIED. Retrying a command reuses its ID. GitHub concurrency queues can drop pending jobs, so an unacknowledged command must be retried; QUEUED is not proof of execution.
+
+An emergency stop blocks controlled entries and models exits at the first full-minute open after the command, with fees/slippage. It can be delayed by GitHub or missing history. Repeated stop commands preserve the earliest stop time. Resume requires all stopped positions to be closed; there is no live exchange kill switch. Existing independent simulations and Telegram remain unaffected.
+
+Run `node test-paper-risk.mjs` for position limits, stop risk, daily cutoff, missing data, emergency timing, idempotence, and resume checks. The workflow verifies both accounting and risk before running. It attempts journal maintenance even if the signal scan fails; only validated successful journal uploads are restored.
