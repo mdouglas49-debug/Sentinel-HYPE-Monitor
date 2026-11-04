@@ -5,9 +5,16 @@ on:
   schedule:
     - cron: '2-59/5 * * * *'
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'paper-*.mjs'
+      - 'restore-paper-journal.mjs'
+      - '.github/workflows/hype-scan.yml'
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: sentinel-hype-scan
@@ -70,3 +77,25 @@ jobs:
         with:
           path: sent-candle.txt
           key: hype-alert-${{ steps.scan.outputs.candle_key }}
+
+      # These run after notifications so a paper-tracking error cannot suppress alerts.
+      - name: Restore background paper journal
+        id: restore_journal
+        if: ${{ !cancelled() && steps.scan.outcome == 'success' }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node restore-paper-journal.mjs
+
+      - name: Advance background paper trades
+        id: paper_journal
+        if: ${{ !cancelled() && steps.restore_journal.outcome == 'success' }}
+        run: node paper-journal.mjs
+
+      - name: Save background paper journal
+        if: ${{ !cancelled() && steps.paper_journal.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: sentinel-journal-${{ github.run_id }}
+          path: paper-journal.json
+          if-no-files-found: error
+          retention-days: 7

@@ -19,3 +19,17 @@ This runs the *same* `tgcloud/lib/screen.js` screening logic as the Telegram Ser
 - Scheduled GitHub Actions on public repos can be automatically disabled after prolonged inactivity; check workflow status occasionally.
 - No trading endpoints, orders, API keys for trading, or Trading Bridge changes.
 - No historical backtest or profitability validation has been performed.
+
+## Background paper-trade journal
+
+Every scanner run now restores the last saved journal and advances independent hypothetical HYPE setups using completed one-minute candles, including runs with no new signal. It uses next-minute modeled fills, 1 HYPE per setup, 5 bps fee and 2 bps slippage per side, stop-first handling when both levels touch, and no funding charges. This is paper simulation, not exchange execution or account equity.
+
+The next checkpoint carries up to 500 recent setups, including their closed results. Each snapshot is retained for 7 days and replaced by a fresh checkpoint on the next run. Restore errors or expired checkpoints stop the journal update rather than silently resetting it. Missing market history is labeled unverified and excluded from realized profit. Hyperliquid supplies only limited recent candle history, so long outages may leave trades unverified.
+
+The private dashboard imports compatible background results on its next sync. Its private pause and custom-assumption controls affect the private journal; they do not change the scanner's default simulation or Telegram alerts. No new trading credentials are needed. The existing Telegram secrets, schedule, and notification deduplication are preserved.
+
+Journal restore/update/upload happens after notification steps and is attempted even if notification delivery fails after a successful scan. A paper-journal failure is visible as a failed workflow; it does not undo an alert already sent. GitHub schedules can be delayed or skipped and are unsuitable for precise live execution.
+
+Run `node test-paper-journal.mjs` to verify checkpoint recovery, modeled exits/P&L, duplicates, and missing-data handling. The engine and validation modules are generated from the private dashboard's TypeScript tracker; update both copies together when changing accounting rules.
+
+Changes to the paper engine or scanner workflow on main also trigger a verification run. These runs use the same alert deduplication and paper-only behavior as scheduled runs.
