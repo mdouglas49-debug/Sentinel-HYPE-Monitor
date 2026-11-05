@@ -1,0 +1,10 @@
+.tgcloud/
+.env*
+node_modules/
+latest-signal.json
+simulated-order.json
+signal-message.txt
+sent-candle.txt
+paper-journal.json
+previous-journal/
+paper-approval-receipt.json

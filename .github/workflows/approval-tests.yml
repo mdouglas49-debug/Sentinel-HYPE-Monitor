@@ -1,0 +1,39 @@
+name: Sentinel Telegram paper approval tests
+on:
+  pull_request:
+    paths:
+      - 'paper-*.mjs'
+      - 'telegram-cloud.mjs'
+      - 'test-*.mjs'
+      - 'test-support/**'
+      - 'tgcloud/**'
+      - '.github/workflows/hype-scan.yml'
+      - '.github/workflows/approval-tests.yml'
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Check syntax
+        run: |
+          node --check paper-approvals.mjs
+          node --check telegram-cloud.mjs
+          node --check tgcloud/lib/paper-approval.js
+          node --check tgcloud/handlers/callback_query.js
+          node --check tgcloud/handlers/message.js
+          node --check tgcloud/endpoints/paper_bridge.js
+          node --check tgcloud/schema.js
+      - name: Test paper-only approval and journal pipeline
+        run: |
+          node test-telegram-cloud.mjs
+          node test-telegram-approval.mjs
+          node test-paper-approvals.mjs
+          node test-paper-approval-pipeline.mjs
+          node test-paper-journal.mjs
+          node test-paper-risk.mjs

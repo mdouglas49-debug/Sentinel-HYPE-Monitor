@@ -16,6 +16,8 @@ on:
     paths:
       - 'paper-*.mjs'
       - 'restore-paper-journal.mjs'
+      - 'telegram-cloud.mjs'
+      - 'tgcloud/**'
       - '.github/workflows/hype-scan.yml'
 
 permissions:
@@ -30,6 +32,8 @@ jobs:
   scan:
     runs-on: ubuntu-latest
     timeout-minutes: 3
+    env:
+      PAPER_APPROVALS_ENABLED: ${{ vars.PAPER_APPROVALS_ENABLED || 'false' }}
 
     steps:
       - name: Check out repository
@@ -43,8 +47,12 @@ jobs:
       - name: Verify paper journal accounting
         id: paper_tests
         run: |
+          node --input-type=module -e "import {approvalsEnabled} from './paper-approvals.mjs'; approvalsEnabled(process.env.PAPER_APPROVALS_ENABLED)"
           node test-paper-journal.mjs
           node test-paper-risk.mjs
+          node test-telegram-cloud.mjs
+          node test-telegram-approval.mjs
+          node test-paper-approvals.mjs
 
       - name: Scan latest completed HYPE candle
         id: scan
@@ -55,16 +63,28 @@ jobs:
         run: node scan.mjs
 
       - name: Simulate qualifying HYPE signal
-        if: steps.scan.outputs.candle_key != ''
+        if: steps.scan.outputs.candle_key != '' && env.PAPER_APPROVALS_ENABLED != 'true'
         run: node simulate.mjs
 
+      # Only YES decisions can supply new paper entries in approval mode.
+      # One per run keeps the original one-record artifact format unchanged.
+      - name: Read approved paper entry
+        id: approval
+        if: ${{ !cancelled() && steps.paper_tests.outcome == 'success' && env.PAPER_APPROVALS_ENABLED == 'true' && github.event.inputs.paper_control == '' }}
+        env:
+          TGCLOUD_TOKEN: ${{ secrets.TGCLOUD_TOKEN }}
+          TGCLOUD_APP_NAME: ${{ vars.TGCLOUD_APP_NAME }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: node paper-approvals.mjs drain
+
       - name: Save simulation result
-        if: steps.scan.outputs.candle_key != ''
+        id: save_simulation
+        if: ${{ !cancelled() && ((env.PAPER_APPROVALS_ENABLED == 'true' && steps.approval.outcome == 'success' && steps.approval.outputs.has_order == 'true') || (env.PAPER_APPROVALS_ENABLED != 'true' && steps.scan.outputs.candle_key != '' && success())) }}
         uses: actions/upload-artifact@v4
         with:
           name: sentinel-paper-${{ github.run_id }}
           path: simulated-order.json
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 30
       - name: Check prior notification for this candle
         if: steps.scan.outputs.candle_key != ''
@@ -72,7 +92,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: sent-candle.txt
-          key: hype-alert-${{ steps.scan.outputs.candle_key }}
+          key: hype-${{ env.PAPER_APPROVALS_ENABLED == 'true' && 'approval' || 'alert' }}-${{ steps.scan.outputs.candle_key }}
           lookup-only: true
 
       - name: Send only if not previously sent
@@ -80,8 +100,14 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TGCLOUD_TOKEN: ${{ secrets.TGCLOUD_TOKEN }}
+          TGCLOUD_APP_NAME: ${{ vars.TGCLOUD_APP_NAME }}
         run: |
-          node send.mjs
+          if [ "$PAPER_APPROVALS_ENABLED" = "true" ]; then
+            node paper-approvals.mjs propose
+          else
+            node send.mjs
+          fi
           echo "${{ steps.scan.outputs.candle_key }}" > sent-candle.txt
 
       - name: Remember sent candle
@@ -89,7 +115,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: sent-candle.txt
-          key: hype-alert-${{ steps.scan.outputs.candle_key }}
+          key: hype-${{ env.PAPER_APPROVALS_ENABLED == 'true' && 'approval' || 'alert' }}-${{ steps.scan.outputs.candle_key }}
 
       # These run after notifications so a paper-tracking error cannot suppress alerts.
       - name: Restore background paper journal
@@ -107,6 +133,7 @@ jobs:
         run: node paper-journal.mjs
 
       - name: Save background paper journal
+        id: save_journal
         if: ${{ !cancelled() && steps.paper_journal.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
@@ -114,3 +141,15 @@ jobs:
           path: paper-journal.json
           if-no-files-found: error
           retention-days: 7
+
+      # A lost acknowledgment causes a safe replay of the same signal_id.
+      # Neither a failed upload nor an unavailable bridge consumes the outbox.
+      - name: Acknowledge saved paper approval
+        if: ${{ !cancelled() && env.PAPER_APPROVALS_ENABLED == 'true' && steps.approval.outputs.has_order == 'true' && steps.save_simulation.outcome == 'success' && steps.save_journal.outcome == 'success' }}
+        env:
+          TGCLOUD_TOKEN: ${{ secrets.TGCLOUD_TOKEN }}
+          TGCLOUD_APP_NAME: ${{ vars.TGCLOUD_APP_NAME }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          PAPER_SIMULATION_UPLOADED: 'true'
+          PAPER_JOURNAL_UPLOADED: 'true'
+        run: node paper-approvals.mjs acknowledge
