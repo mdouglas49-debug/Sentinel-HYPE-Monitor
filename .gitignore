@@ -11,3 +11,7 @@ paper-approval-receipt.json
 
 .paper-state-base
 paper-dashboard/
+
+# Isolated stocks pilot state and Python bytecode
+stocks-state/
+__pycache__/
