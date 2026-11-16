@@ -11,8 +11,8 @@ export function updateJournal(previous,incoming,bars,end,command){
  if(incoming){const o=validateOrder(incoming);if(!orders.some(x=>x.signal_id===o.signal_id))orders.push({...o,tracking:startTrade(o,defaults)});}
  for(const o of orders)o.tracking=advanceTrade(o,o.tracking,bars,end);
  orders.sort((a,b)=>Date.parse(b.timestamp)-Date.parse(a.timestamp));
- const retained=orders.slice(0,500);
- return {schema:1,mode:'SIMULATION_ONLY',updated_at:new Date(end).toISOString(),assumptions:defaults,orders:retained,portfolio:updatePortfolio(previous?.portfolio,incoming,bars,end,command),summary:summarize(retained.map(o=>o.tracking)),retention:'Latest 500 independent paper setups; not an account equity curve.'};
+ const retained=orders;
+ return {schema:1,mode:'SIMULATION_ONLY',updated_at:new Date(end).toISOString(),assumptions:defaults,orders:retained,portfolio:updatePortfolio(previous?.portfolio,incoming,bars,end,command),summary:summarize(retained.map(o=>o.tracking)),retention:'Complete independent paper setup history; realized drawdown excludes open positions.'};
 }
 export async function run(){
  const previous=existsSync('previous-journal/paper-journal.json')?validateJournal(JSON.parse(readFileSync('previous-journal/paper-journal.json','utf8'))):null;
