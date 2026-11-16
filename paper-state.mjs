@@ -4,8 +4,8 @@ import {mkdirSync, readFileSync, writeFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 import {validateJournal} from './paper-journal.mjs';
 const ref = 'refs/heads/paper-state';
-function git(args, input) {
-  return execFileSync('git', args, {input, encoding:'utf8', stdio:['pipe','pipe','pipe']}).trim();
+function git(args, input, maxBuffer=1024*1024) {
+  return execFileSync('git', args, {input, maxBuffer, encoding:'utf8', stdio:['pipe','pipe','pipe']}).trim();
 }
 export function restoreState() {
   // ls-remote failures must not be interpreted as an empty journal.
@@ -14,7 +14,7 @@ export function restoreState() {
   const base = remote.split(/\s/)[0];
   git(['fetch', '--no-tags', 'origin', base]);
   writeFileSync('.paper-state-base', base);
-  const content = git(['show', `FETCH_HEAD:paper-journal.json`]);
+  const content = git(['show', `FETCH_HEAD:paper-journal.json`], undefined, 256*1024*1024);
   validateJournal(JSON.parse(content));
   mkdirSync('previous-journal', {recursive:true});
   writeFileSync('previous-journal/paper-journal.json', content);

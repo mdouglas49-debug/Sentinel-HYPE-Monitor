@@ -49,6 +49,7 @@ jobs:
         run: |
           node --input-type=module -e "import {approvalsEnabled} from './paper-approvals.mjs'; approvalsEnabled(process.env.PAPER_APPROVALS_ENABLED)"
           node test-paper-state.mjs
+          node test-paper-dashboard.mjs
           node test-paper-journal.mjs
           node test-paper-risk.mjs
           node test-telegram-cloud.mjs
@@ -138,13 +139,18 @@ jobs:
         if: ${{ !cancelled() && steps.paper_journal.outcome == 'success' }}
         run: node paper-state.mjs save
 
+      - name: Prepare dashboard compatibility snapshot
+        id: dashboard_snapshot
+        if: ${{ !cancelled() && steps.persist_journal.outcome == 'success' }}
+        run: node paper-dashboard.mjs
+
       - name: Save background paper journal
         id: save_journal
-        if: ${{ !cancelled() && steps.persist_journal.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.dashboard_snapshot.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
           name: sentinel-journal-${{ github.run_id }}
-          path: paper-journal.json
+          path: paper-dashboard/paper-journal.json
           if-no-files-found: error
           retention-days: 7
 

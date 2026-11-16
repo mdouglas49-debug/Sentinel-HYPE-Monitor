@@ -17,6 +17,8 @@ try {
  for(let i=0;i<502;i++) { const time=i*300000; const o={...base,signal_id:`HYPE-5m-${time}`,candle_utc:new Date(time).toISOString(),timestamp:new Date(time+300000).toISOString()}; journal=updateJournal(journal,o,[],time+300000); }
  assert.equal(journal.orders.length,502);
  journal=updateJournal(journal,journal.orders.at(-1),[],502*300000); assert.equal(journal.orders.length,502);
+ for(const order of journal.orders)order.tracking.note='x'.repeat(3000);
+ assert(Buffer.byteLength(JSON.stringify(journal))>1048576);
  writeFileSync('paper-journal.json',JSON.stringify(journal)); saveState();
  assert.throws(saveState,/changed since restore/);
  assert.equal(restoreState(),true);
