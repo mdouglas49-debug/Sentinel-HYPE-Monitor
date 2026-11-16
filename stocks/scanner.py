@@ -96,13 +96,14 @@ class Journal:
     def events(self): return [json.loads(r[0]) for r in self.db.execute('SELECT payload FROM events ORDER BY rowid')]
     def deliver(self, event, channel, sender):
         self.add(event)
+        delivery_id = f"stocks-alert:{event['watchlist_id']}:{event['candidate']['symbol']}" if channel=='telegram' and event['kind']=='breakout' else event['id']
         # Claim BEFORE side effect. Ambiguous sends remain UNKNOWN and never auto resend.
         with self.db:
-            c = self.db.execute('INSERT OR IGNORE INTO delivery VALUES(?,?,?,NULL)', (event['id'], channel, 'UNKNOWN'))
+            c = self.db.execute('INSERT OR IGNORE INTO delivery VALUES(?,?,?,NULL)', (delivery_id, channel, 'UNKNOWN'))
         if not c.rowcount:
-            return self.db.execute('SELECT status,receipt FROM delivery WHERE id=? AND channel=?', (event['id'], channel)).fetchone()
+            return self.db.execute('SELECT status,receipt FROM delivery WHERE id=? AND channel=?', (delivery_id, channel)).fetchone()
         receipt = sender(event)
-        with self.db: self.db.execute('UPDATE delivery SET status=?,receipt=? WHERE id=? AND channel=?', ('CONFIRMED', canonical(receipt), event['id'], channel))
+        with self.db: self.db.execute('UPDATE delivery SET status=?,receipt=? WHERE id=? AND channel=?', ('CONFIRMED', canonical(receipt), delivery_id, channel))
         return 'CONFIRMED', receipt
 
 
@@ -260,7 +261,7 @@ def message(e):
     for c in e.get('candidates', []):
         lines.extend([f"{c['symbol']} | trigger {c['trigger']:.2f} | paper stop {c['stop']:.2f} | target {c['target']:.2f}", c['reason'], 'News: ' + (c['catalyst']['url'] if c.get('catalyst') else 'unverified')])
     if e['kind'] == 'breakout':
-        c=e['candidate']; lines.append(f"{c['symbol']} completed 1m close {e['confirmation']['close']:.2f} through {c['trigger']:.2f}; paper stop {c['stop']:.2f}; target {c['target']:.2f}")
+        c=e['candidate']; lines.append(f"Candle opened: {e['confirmation']['bar_at']} | observed: {e['observed_at']}"); lines.append(f"{c['symbol']} completed 1m close {e['confirmation']['close']:.2f} through {c['trigger']:.2f}; paper stop {c['stop']:.2f}; target {c['target']:.2f}")
     lines.append('IEX is one exchange; alerts and volume can differ from consolidated SIP.')
     return '\n'.join(lines)
 

@@ -42,6 +42,13 @@ class ScannerTests(unittest.TestCase):
    status,_=j.deliver(e,'dashboard',send);self.assertEqual(status,'UNKNOWN');self.assertEqual(len(calls),1)
    changed={**e,'test':False}
    with self.assertRaises(RuntimeError):j.add(changed)
+ def test_one_telegram_alert_across_feeds(self):
+  with tempfile.TemporaryDirectory() as d:
+   j=Journal(str(Path(d)/'j.sqlite'));calls=[]
+   for feed in ('iex','sip'):
+    e=event('breakout',S,{'watchlist_id':'fixture','candidate':C,'feed':feed})
+    j.deliver(e,'telegram',lambda e:calls.append(e) or {'event_id':e['id']})
+   self.assertEqual(len(calls),1);self.assertEqual(len(j.events()),2)
  def test_paper_outcomes_no_lookahead(self):
   confirmation={'bar_at':iso(at(S,'09:30')),'close':102};window=at(S,'09:33')
   self.assertEqual(outcome(C,confirmation,[bar('09:31',h=106,l=98)],at(S,'09:32'),window)['state'],'STOP')
