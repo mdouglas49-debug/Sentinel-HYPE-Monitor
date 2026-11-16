@@ -1,9 +1,9 @@
-"""Sentinel Full Market. Standard library only; no order API exists here."""
+"""Sentinel Full Market. Official alpaca-py SDK; no order API exists here."""
 import argparse, csv, hashlib, io, json, math, os, sqlite3, statistics, sys, time
 from datetime import datetime, timedelta, timezone, date
 from pathlib import Path
 from urllib.request import Request, urlopen
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import urlsplit
 from urllib.error import HTTPError, URLError
 from zoneinfo import ZoneInfo
 
@@ -54,15 +54,23 @@ class Alpaca:
         self.key = os.environ.get('APCA_API_KEY_ID') or os.environ.get('ALPACA_API_KEY')
         self.secret = os.environ.get('APCA_API_SECRET_KEY') or os.environ.get('ALPACA_SECRET_KEY')
         if not self.key or not self.secret: raise RuntimeError('Missing APCA_API_KEY_ID and APCA_API_SECRET_KEY secrets')
-        self.calls, self.last = 0, 0
+        try:
+            from alpaca_sdk import ReadOnlyClient
+        except ImportError:
+            raise RuntimeError('Install the SDK with: python -m pip install -r stocks/requirements.txt') from None
+        self.clients = {host: ReadOnlyClient(host, self.key, self.secret) for host in ('data.alpaca.markets', 'paper-api.alpaca.markets')}
+        self.last = 0
+    @property
+    def calls(self):
+        return sum(client.request_count for client in self.clients.values())
     def get(self, path, params=None, calendar=False):
         # Fixed read-only hosts and GET only. No configurable broker/order routes.
         if path not in ('/v2/stocks/bars', '/v2/calendar', '/v1beta1/news'): raise RuntimeError('Read-only route denied')
         time.sleep(max(0, .36 - (time.monotonic() - self.last)))
-        self.last = time.monotonic(); self.calls += 1
+        self.last = time.monotonic()
         host = 'paper-api.alpaca.markets' if calendar else 'data.alpaca.markets'
-        raw, headers = request('https://' + host + path + '?' + urlencode(params or {}), {'APCA-API-KEY-ID': self.key, 'APCA-API-SECRET-KEY': self.secret})
-        return json.loads(raw), headers
+        _, version, suffix = path.split('/', 2)
+        return self.clients[host].get('/' + suffix, params or {}, api_version=version), {}
     def calendar(self, start, end):
         return self.get('/v2/calendar', {'start': str(start), 'end': str(end)}, calendar=True)[0]
     def bars(self, symbols, start, end, feed='sip', timeframe='1Min'):

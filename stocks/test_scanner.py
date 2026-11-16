@@ -6,6 +6,43 @@ S='2026-11-17'
 def bar(t, o=100,h=101,l=99,c=100,v=100):return {'t':iso(at(S,t)), 'o':o,'h':h,'l':l,'c':c,'v':v}
 C={'symbol':'TEST','trigger':101,'stop':99,'target':105,'reason':'fixture'}
 class ScannerTests(unittest.TestCase):
+ def test_sdk_transport_pagination_and_routes(self):
+  from unittest.mock import patch
+  from requests import Response
+  def response(value):
+   r=Response();r.status_code=200;r._content=json.dumps(value).encode();return r
+  with patch.dict(os.environ,{'APCA_API_KEY_ID':'fixture-key','APCA_API_SECRET_KEY':'fixture-secret'}):
+   api=Alpaca()
+  client=api.clients['data.alpaca.markets']
+  with patch.object(client._session,'request',side_effect=[response({'bars':{'TEST':[bar('09:30')]},'next_page_token':'next'}),response({'bars':{'TEST':[bar('09:31')]}})]) as send:
+   rows,pages=api.bars(['TEST'],at(S,'09:30'),at(S,'09:31'),'iex')
+   self.assertEqual(pages,2);self.assertEqual(api.calls,2);self.assertEqual(len(rows['TEST']),1)
+   for call in send.call_args_list:
+    self.assertEqual(call.args,('GET','https://data.alpaca.markets/v2/stocks/bars'))
+    self.assertEqual(call.kwargs['timeout'],25);self.assertFalse(call.kwargs['allow_redirects'])
+    self.assertEqual(call.kwargs['headers']['APCA-API-KEY-ID'],'fixture-key')
+    self.assertEqual(call.kwargs['params']['feed'],'iex')
+   self.assertEqual(send.call_args_list[1].kwargs['params']['page_token'],'next')
+  with patch.object(client._session,'request') as send:
+   for method,path in [('POST','/stocks/bars'),('GET','/orders')]:
+    with self.assertRaisesRegex(RuntimeError,'denied'):client._request(method,path)
+   with self.assertRaisesRegex(RuntimeError,'denied'):client.get('/stocks/bars',base_url='https://elsewhere.example')
+   send.assert_not_called()
+ def test_sdk_news_and_paper_calendar(self):
+  from unittest.mock import patch
+  from requests import Response
+  with patch.dict(os.environ,{'APCA_API_KEY_ID':'fixture-key','APCA_API_SECRET_KEY':'fixture-secret'}):api=Alpaca()
+  for path,host,calendar in [('/v1beta1/news','data.alpaca.markets',False),('/v2/calendar','paper-api.alpaca.markets',True)]:
+   r=Response();r.status_code=200;r._content=b'[]'
+   with patch.object(api.clients[host]._session,'request',return_value=r) as send:
+    api.get(path,{},calendar=calendar);self.assertEqual(send.call_args.args,('GET','https://'+host+path))
+ def test_sdk_errors_do_not_expose_credentials(self):
+  from unittest.mock import patch
+  from requests.exceptions import ConnectionError
+  with patch.dict(os.environ,{'APCA_API_KEY_ID':'fixture-key','APCA_API_SECRET_KEY':'fixture-secret'}):api=Alpaca()
+  with patch.object(api.clients['data.alpaca.markets']._session,'request',side_effect=ConnectionError('fixture-secret')):
+   with self.assertRaises(RuntimeError) as error:api.get('/v2/stocks/bars',{})
+   self.assertNotIn('fixture-secret',str(error.exception));self.assertIn('connection failed',str(error.exception))
  def test_union_overlap_and_class_symbols(self):
   from unittest.mock import patch
   def fake(url,*args):

@@ -1,6 +1,6 @@
 # Sentinel AI - Full Market pilot
 
-Paper-only, standard-library Python 3.11+. No trading/order endpoint or paid dependency is used. Existing HYPE files, secrets, workflows and schedules are unchanged. This is an isolated pilot implementation; market access and timing are not established by fixture tests.
+Paper-only, Python 3.11+ using the official `alpaca-py` SDK. No trading/order endpoint or paid dependency is used. Existing HYPE files, secrets, workflows and schedules are unchanged. This is an isolated pilot implementation; market access and timing are not established by fixture tests.
 
 ## Current verification (November 16, 2026)
 
@@ -20,6 +20,7 @@ The private dashboard service caller uses SENTINEL_DASHBOARD_URL with that exact
 From the repository root:
 
 ```sh
+python -m pip install -r stocks/requirements.txt
 python -m unittest discover -s stocks -p 'test_*.py'
 python stocks/scanner.py preflight
 python stocks/scanner.py universe
@@ -50,3 +51,7 @@ Historical SIP requests use an explicit cutoff no later than 15 minutes plus a f
 No 09:15 scheduler or sustained live monitor has been activated. Keep the readiness gate until Alpaca access, official membership, full-universe cold/warm timing, delivery and IEX/SIP observations pass. An ordinary GitHub cron is not a precise minute scheduler. Do not count the existing ChatGPT readiness/wrap-up tasks as evidence of a running scanner. Start the monitor on an always-on no-cost runner only after confirming its lifecycle and preserved private SQLite state; do not add paid hosting.
 
 Alpaca references: https://docs.alpaca.markets/us/docs/about-market-data-api and https://docs.alpaca.markets/us/reference/stockbars . Test the actual account's entitlements; documentation does not verify account access.
+
+## Official SDK
+
+`alpaca-py==0.45.0` is pinned in requirements.txt. The scanner uses its REST client for stock bars, news and the paper calendar. A restricted adapter rejects every non-GET request, alternate host and unlisted route; no trading client is instantiated. Manual pagination and explicit feed/cutoff parameters remain intact. Each HTTP attempt, including SDK rate-limit retries, contributes to the benchmark request count. Requests use a 25-second timeout, inherited proxies and CA trust, and sanitized errors. Installing the SDK does not establish credential or feed access.
