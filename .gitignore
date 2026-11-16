@@ -8,3 +8,5 @@ sent-candle.txt
 paper-journal.json
 previous-journal/
 paper-approval-receipt.json
+
+.paper-state-base

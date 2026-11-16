@@ -3,7 +3,7 @@ import { validateRiskLimits, validateRiskControl } from './paper-risk.mjs';
 import { defaults, MINUTE } from './paper-engine.mjs';
 export function sameAssumptions(a, b) { return a && b && a.quantity === b.quantity && a.fee_bps === b.fee_bps && a.slippage_bps === b.slippage_bps; }
 export function validateBackgroundJournal(input) {
-    if (input?.schema !== 1 || input.mode !== 'SIMULATION_ONLY' || !Array.isArray(input.orders) || input.orders.length > 500 || !Number.isFinite(Date.parse(input.updated_at)) || Date.parse(input.updated_at) > Date.now() + MINUTE)
+    if (input?.schema !== 1 || input.mode !== 'SIMULATION_ONLY' || !Array.isArray(input.orders) || !Number.isFinite(Date.parse(input.updated_at)) || Date.parse(input.updated_at) > Date.now() + MINUTE)
         throw Error('Invalid background paper journal.');
     const ids = new Set();
     const orders = input.orders.map((item) => {
