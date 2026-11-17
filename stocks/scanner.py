@@ -282,16 +282,45 @@ def telegram(e):
     return {'message_id': d['result']['message_id'], 'date': d['result']['date'], 'payload_sha256': digest(e)}
 
 def dashboard(e):
-    origin, token = os.environ.get('SENTINEL_DASHBOARD_URL'), os.environ.get('SENTINEL_SITES_TOKEN')
-    if origin != 'https://sentinel-hype-dashboard.chirpyfrog6.chatgpt.site' or not token: raise RuntimeError('Missing private dashboard service access')
-    raw, _ = request(origin + '/api/stocks', {'Content-Type': 'application/json', 'OAI-Sites-Authorization': 'Bearer ' + token}, e)
-    d = json.loads(raw)
-    if d.get('id') != e['id'] or d.get('payload_sha256') != digest(e): raise RuntimeError('Dashboard receipt mismatch')
+    from sites_access import call
+    status, d = call('POST', body=e)
+    if status != 200: raise RuntimeError(f'Private dashboard HTTP {status}; check Sites service access')
+    if d.get('id') != e['id'] or d.get('payload_sha256') != digest(e) or not d.get('persisted'):
+        raise RuntimeError('Dashboard receipt mismatch')
     return d
 
+def verify_dashboard(journal, session, test_id):
+    from sites_access import call
+    from urllib.parse import urlencode
+    query = '?' + urlencode({'session': session})
+    status, _ = call('GET', query=query, authenticated=False)
+    if status not in (301, 302, 303, 307, 308, 401, 403):
+        raise RuntimeError('Dashboard anonymous access was not rejected; review Site privacy before delivery')
+    status, _ = call('GET', query=query)
+    if status != 200: raise RuntimeError(f'Authenticated dashboard read HTTP {status}')
+    e = event('delivery_test', session, {'test_id': test_id, 'cutoff': None, 'feed': 'NONE', 'candidates': [], 'reason': 'Synthetic Sites authentication, persistence, readback and replay test; no market data'}, True)
+    state, receipt = journal.deliver(e, 'dashboard', dashboard)
+    if state != 'CONFIRMED': raise RuntimeError('Dashboard delivery is UNKNOWN; reconcile the original attempt before a new test')
+    cursor = None; seen = set(); found = False
+    while True:
+        query = '?' + urlencode({'session': session, **({'cursor': cursor} if cursor else {})})
+        status, page = call('GET', query=query)
+        if status != 200: raise RuntimeError(f'Dashboard readback HTTP {status}')
+        found = found or any(row == e for row in page.get('events', []))
+        cursor = page.get('cursor')
+        if not cursor: break
+        if cursor in seen or len(seen) > 1000: raise RuntimeError('Invalid dashboard readback pagination')
+        seen.add(cursor)
+    if not found: raise RuntimeError('Dashboard event not found in readback')
+    replay = dashboard(e)
+    if not replay.get('duplicate'): raise RuntimeError('Dashboard replay was not deduplicated')
+    return {'id': e['id'], 'anonymous_access': 'rejected', 'authenticated_access': 'verified', 'readback': 'matched', 'replay': 'deduplicated', 'mode': 'PAPER_ONLY', 'test': True}
+
 def main():
-    p=argparse.ArgumentParser(); p.add_argument('command', choices=['preflight','universe','scan','benchmark','watch','test-delivery','publish']);p.add_argument('--session', default=str(datetime.now(ET).date()));p.add_argument('--state', default='stocks-state/journal.sqlite');p.add_argument('--cache', default='stocks-state/cache');p.add_argument('--file', default='stocks-state/watchlist.json');p.add_argument('--send', action='store_true');p.add_argument('--test-id',default='pilot-connectivity-v1');p.add_argument('--channel',choices=['both','telegram','dashboard'],default='both')
+    p=argparse.ArgumentParser(); p.add_argument('command', choices=['preflight','universe','scan','benchmark','watch','test-delivery','publish','verify-dashboard']);p.add_argument('--session', default=str(datetime.now(ET).date()));p.add_argument('--state', default='stocks-state/journal.sqlite');p.add_argument('--cache', default='stocks-state/cache');p.add_argument('--file', default='stocks-state/watchlist.json');p.add_argument('--send', action='store_true');p.add_argument('--test-id',default='pilot-connectivity-v1');p.add_argument('--channel',choices=['both','telegram','dashboard'],default='both')
     a=p.parse_args(); journal=Journal(a.state)
+    if a.command == 'verify-dashboard':
+        print(canonical(verify_dashboard(journal,a.session,a.test_id)));return
     if a.command == 'universe':
         symbols, evidence=universe();print(json.dumps({'symbols':symbols,'membership':evidence},indent=2));return
     if a.command == 'preflight':

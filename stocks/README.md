@@ -55,3 +55,21 @@ Alpaca references: https://docs.alpaca.markets/us/docs/about-market-data-api and
 ## Official SDK
 
 `alpaca-py==0.45.0` is pinned in requirements.txt. The scanner uses its REST client for stock bars, news and the paper calendar. A restricted adapter rejects every non-GET request, alternate host and unlisted route; no trading client is instantiated. Manual pagination and explicit feed/cutoff parameters remain intact. Each HTTP attempt, including SDK rate-limit retries, contributes to the benchmark request count. Requests use a 25-second timeout, inherited proxies and CA trust, and sanitized errors. Installing the SDK does not establish credential or feed access.
+
+## Authenticated Sites delivery — November 17, 2026
+
+The scanner uses the existing owner-private Site's service credential returned by Sites `get_site`. Send it only in `OAI-Sites-Authorization: Bearer ...` to the fixed Sentinel origin's `/api/stocks`. Browser sign-in cookies and visitor identity headers are not copied or forged. Site access remains owner-only.
+
+`SENTINEL_SITES_TOKEN` and `SENTINEL_DASHBOARD_URL` may be supplied by the environment. As a workspace-local alternative, `stocks/sites_access.py` reads credential JSON on hidden stdin and atomically saves `stocks-state/.env.sites` with mode 0600 inside a 0700 directory. The scanner loads these two environment names automatically when they are otherwise absent. This file is ignored by Git; credentials are never committed or passed in command arguments. The reader rejects symlinks, non-regular files, incorrect ownership and permissions that expose values to others. Existing environment values take precedence. The client refuses redirects, other origins, and methods other than GET/POST, and sanitizes error output.
+
+This local configuration applies to this checkout and task. It does not register a secret in the reusable Cloud environment's vault, and a fresh checkout must obtain supported service access again or receive the environment secret. No tool for writing that Cloud configuration is available in this task. Do not copy this credential into a public repository, schedule prompt, deployment archive or browser bundle.
+
+Verify the actual authenticated path with:
+
+```sh
+python stocks/scanner.py verify-dashboard --session 2026-11-17 --test-id sites-auth-v1
+```
+
+This first requires anonymous access to be rejected and authenticated GET to succeed. It then writes one clearly labeled PAPER_ONLY/SYNTHETIC event, verifies its receipt SHA-256 and persisted readback, and replays the same ID to confirm server-side deduplication. It never sends Telegram messages or uses market prices. A network failure before the write creates no delivery claim. An ambiguous POST remains UNKNOWN and is not automatically resent.
+
+Current verification: the Sites service credential was configured locally and permission/ignore checks passed. All 18 stock tests pass, including credential loading, fixed-host/header-only auth, redirect refusal, anonymous rejection, write/readback and duplicate handling with mocked HTTP. The actual hosted verification was attempted but blocked before any write: the running environment denies `sentinel-hype-dashboard.chirpyfrog6.chatgpt.site` with CONNECT 403. Add this exact hostname to the active environment's allowed domains before claiming production delivery. No endpoint or dashboard privacy change is required.
