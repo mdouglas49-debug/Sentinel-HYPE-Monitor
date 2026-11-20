@@ -77,3 +77,48 @@ jobs:
           path: stocks-state/full-market-benchmark.json
           if-no-files-found: warn
           retention-days: 7
+
+  telegram_paper_proof:
+    name: Telegram synthetic paper delivery
+    needs: [verify, alpaca_preflight, full_market_benchmark]
+    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'feat/full-market-pilot')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate bot and prepare exact paper fixture
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python stocks/telegram_proof.py prepare
+      # Immutable claim is uploaded before the external send. A rerun of this
+      # same run ID cannot upload that name again while retained and stops here.
+      # Ambiguous sends require reconciliation, never an automatic replay.
+      - name: Reserve the single delivery attempt
+        uses: actions/upload-artifact@v4
+        with:
+          name: sentinel-telegram-delivery-claim-${{ github.run_id }}
+          path: stocks-state/telegram-delivery-claim.json
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: false
+      - name: Send synthetic paper result and verify restart deduplication
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python stocks/telegram_proof.py send
+      - name: Save paper fixture and receipt without credentials
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sentinel-telegram-paper-proof-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            stocks-state/paper-delivery-fixture.json
+            stocks-state/telegram-delivery-proof.json
+          if-no-files-found: warn
+          retention-days: 7
