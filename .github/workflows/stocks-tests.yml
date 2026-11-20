@@ -48,3 +48,32 @@ jobs:
           path: stocks-state/alpaca-preflight.json
           if-no-files-found: warn
           retention-days: 7
+
+  full_market_benchmark:
+    name: Full Market cold and warm benchmark
+    needs: [verify, alpaca_preflight]
+    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'feat/full-market-pilot')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install official Alpaca SDK
+        run: python -m pip install -r stocks/requirements.txt
+      - name: Measure full universe without publishing signals
+        env:
+          APCA_API_KEY_ID: ${{ secrets.APCA_API_KEY_ID }}
+          APCA_API_SECRET_KEY: ${{ secrets.APCA_API_SECRET_KEY }}
+        run: python stocks/benchmark.py
+      - name: Save timing and coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sentinel-full-market-benchmark-${{ github.run_id }}-${{ github.run_attempt }}
+          path: stocks-state/full-market-benchmark.json
+          if-no-files-found: warn
+          retention-days: 7
