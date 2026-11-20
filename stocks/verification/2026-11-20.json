@@ -1,0 +1,145 @@
+{
+  "schema": 1,
+  "mode": "PAPER_ONLY",
+  "verified_date": "2026-11-20",
+  "alpaca": {
+    "api_requests": 3,
+    "blockers": [],
+    "calendar": {
+      "host": "paper-api.alpaca.markets",
+      "last_session": "2026-11-20",
+      "sessions_returned": 9,
+      "status": "VERIFIED"
+    },
+    "check": "ALPACA_ACCESS_PREFLIGHT",
+    "checked_at": "2026-11-20T15:51:58.951009Z",
+    "feeds": {
+      "iex": {
+        "bar_counts": {
+          "AAPL": 2038,
+          "MSFT": 1990
+        },
+        "latest_bar_at": {
+          "AAPL": "2026-11-20T15:50:00Z",
+          "MSFT": "2026-11-20T15:50:00Z"
+        },
+        "pages": 1,
+        "requested_cutoff": "2026-11-20T15:51:00Z",
+        "status": "VERIFIED"
+      },
+      "sip": {
+        "bar_counts": {
+          "AAPL": 4262,
+          "MSFT": 4100
+        },
+        "latest_bar_at": {
+          "AAPL": "2026-11-20T15:34:00Z",
+          "MSFT": "2026-11-20T15:34:00Z"
+        },
+        "pages": 1,
+        "requested_cutoff": "2026-11-20T15:35:00Z",
+        "status": "VERIFIED"
+      }
+    },
+    "mode": "PAPER_ONLY",
+    "schema": 1,
+    "scope": "Two-symbol access check; full-universe coverage, scan timing, live freshness, Telegram and dashboard delivery are separate checks",
+    "status": "AUTHENTICATED_MARKET_DATA_ACCESS_VERIFIED"
+  },
+  "benchmark": {
+    "check": "FULL_UNIVERSE_BENCHMARK",
+    "checked_at": "2026-11-20T15:56:24.895567Z",
+    "membership": {
+      "overlap": 86,
+      "sources": {
+        "nasdaq100": {
+          "downloaded_at": "2026-11-20T15:56:25.179636Z",
+          "membership_status": "community source; official current membership unverified",
+          "sha256": "857aedc0b446efc35028842bcde3d35f58e92aece3e5e585bd0676132cc7b714",
+          "symbols": 101,
+          "url": "https://raw.githubusercontent.com/yfiua/index-constituents/main/docs/constituents-nasdaq100.csv"
+        },
+        "sp500": {
+          "downloaded_at": "2026-11-20T15:56:24.981920Z",
+          "membership_status": "community source; official current membership unverified",
+          "sha256": "5307d7ebfe868913b59c53463993b4ce4544a9bd031cf9d4fe4f093d743c4995",
+          "symbols": 503,
+          "url": "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/main/data/constituents.csv"
+        }
+      },
+      "unique": 518
+    },
+    "mode": "PAPER_ONLY",
+    "runs": {
+      "cold": {
+        "api_requests": 50,
+        "data_cutoff": "2026-11-20T14:00:00Z",
+        "eligible": 21,
+        "exclusion_counts": {
+          "below_pilot_thresholds": 166,
+          "no_premarket_bars": 79,
+          "stale_premarket": 252
+        },
+        "history_sessions": 20,
+        "latest_bar_max": "2026-11-20T13:59:00Z",
+        "latest_bar_min": "2026-11-20T09:00:00Z",
+        "requested": 518,
+        "seconds": 18.661,
+        "shortlisted": 5,
+        "with_premarket_bars": 439
+      },
+      "warm": {
+        "api_requests": 9,
+        "data_cutoff": "2026-11-20T14:00:00Z",
+        "eligible": 21,
+        "exclusion_counts": {
+          "below_pilot_thresholds": 166,
+          "no_premarket_bars": 79,
+          "stale_premarket": 252
+        },
+        "history_sessions": 20,
+        "latest_bar_max": "2026-11-20T13:59:00Z",
+        "latest_bar_min": "2026-11-20T09:00:00Z",
+        "requested": 518,
+        "seconds": 3.257,
+        "shortlisted": 5,
+        "with_premarket_bars": 439
+      }
+    },
+    "schema": 1,
+    "scope": "Retrospective timing and data coverage only; no watchlist, alert, order or outcome is published",
+    "session": "2026-11-20",
+    "status": "TIMING_AND_COVERAGE_MEASURED",
+    "total_seconds": 22.205,
+    "universe_seconds": 0.284
+  },
+  "telegram": {
+    "id": "stocks-aafdf0e6acdf16869fa0a51ee4f623be",
+    "message_id": 70,
+    "mode": "PAPER_ONLY",
+    "payload_sha256": "00990038cefa457c3da592e5eb6efbec7656789369fca1e5dae716fdb0f22b05",
+    "restart_duplicate_suppressed": true,
+    "status": "DELIVERED",
+    "telegram_timestamp": 1795190487,
+    "test": true
+  },
+  "dashboard": {
+    "mode": "PAPER_ONLY",
+    "reason": "Missing GitHub Actions secret: SENTINEL_SITES_TOKEN",
+    "status": "BLOCKED",
+    "test": true
+  },
+  "evidence": {
+    "alpaca_run": "https://github.com/mdouglas49-debug/Sentinel-HYPE-Monitor/actions/runs/44752923909",
+    "benchmark_and_telegram_run": "https://github.com/mdouglas49-debug/Sentinel-HYPE-Monitor/actions/runs/44768825795",
+    "dashboard_run": "https://github.com/mdouglas49-debug/Sentinel-HYPE-Monitor/actions/runs/44769537011"
+  },
+  "limitations": [
+    "Community index membership is not an official attestation.",
+    "Benchmark was retrospective with 09:00 Eastern cutoff, not an on-time 09:15 brief.",
+    "79 of 518 symbols returned no premarket bars; 252 others were stale and excluded.",
+    "Telegram proof used a synthetic event with no stock picks or market prices.",
+    "Dashboard delivery, live IEX/SIP comparison and unattended daily monitoring remain unverified.",
+    "No recurring stock scanner schedule is enabled; no orders were submitted."
+  ]
+}

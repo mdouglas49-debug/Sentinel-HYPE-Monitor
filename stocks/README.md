@@ -95,3 +95,14 @@ After authentication passes, the pilot PR's workflow runs `stocks/benchmark.py`.
 After the pilot's sample authentication and full-universe benchmark jobs pass, the same-repository pilot workflow verifies the existing Telegram bot/destination and sends a fixture marked PAPER ONLY / SYNTHETIC TEST, with no stock picks or market data. Existing HYPE Telegram secrets are reused without changing its workflow. The exact fixture and receipt are retained for later dashboard verification of the same event ID.
 
 An immutable run-ID claim artifact is saved before the send, blocking reruns of that same attempt while the seven-day artifact is retained. A fresh workflow run has a distinct test ID. This does not promise permanent exactly-once transport after artifact expiry/deletion. The SQLite journal claims the send before its side effect, checks the returned text and receipt hash, and reopens the journal to verify that replay does not send again. Ambiguous outcomes remain UNKNOWN. Only synthetic fixture content and message ID/timestamp/hash enter the report; bot token and chat ID are never exported. This proof does not activate recurring stock alerts.
+
+## Pilot evidence — November 20, 2026
+
+The credential-free [verification record](verification/2026-11-20.json) preserves actual results and source workflow links:
+
+- Alpaca paper-calendar and SIP/IEX access passed with the repository's paper keys.
+- Available index lists contained 518 unique symbols (503 + 101 minus 86 overlaps). A retrospective 09:00 Eastern scan took 18.661 seconds cold and 3.257 seconds warm, using 50 and 9 HTTP attempts. Premarket bars were returned for 439 symbols; 79 had none. Of the 439 observed names, 252 were stale and excluded; 21 passed the pilot thresholds, with a five-name shortlist. No picks or prices were exported by the benchmark.
+- Telegram delivered synthetic event `stocks-aafdf0e6acdf16869fa0a51ee4f623be`, message ID 70, and the journal restart check suppressed a duplicate. Existing GitHub Telegram credentials worked.
+- The dashboard workflow retrieved that exact fixture and receipt, then stopped because the GitHub Actions secret `SENTINEL_SITES_TOKEN` is missing. No production dashboard write/readback has been claimed.
+
+Benchmarks and Telegram test sends now require explicit workflow-dispatch inputs; ordinary PR updates run unit/authentication checks without sending more Telegram fixtures. The separate dashboard proof can be retried after its Sites credential is bound. Full-universe official membership, live IEX/SIP comparison, setup outcomes and a recurring stock schedule remain pending. These proof results do not establish that a 09:15 brief ran.
