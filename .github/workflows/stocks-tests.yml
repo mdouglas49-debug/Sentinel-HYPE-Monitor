@@ -18,3 +18,33 @@ jobs:
         run: python -m pip install -r stocks/requirements.txt
       - name: Verify isolated paper scanner
         run: python -m unittest discover -s stocks -p 'test_*.py'
+
+  alpaca_preflight:
+    name: Alpaca paper authentication
+    needs: verify
+    # Same-repository PRs and explicit owner runs only. Forks receive no keys.
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install official Alpaca SDK
+        run: python -m pip install -r stocks/requirements.txt
+      - name: Verify paper calendar and market data
+        env:
+          APCA_API_KEY_ID: ${{ secrets.APCA_API_KEY_ID }}
+          APCA_API_SECRET_KEY: ${{ secrets.APCA_API_SECRET_KEY }}
+        run: python stocks/preflight.py
+      - name: Save credential-free preflight report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sentinel-alpaca-preflight-${{ github.run_id }}-${{ github.run_attempt }}
+          path: stocks-state/alpaca-preflight.json
+          if-no-files-found: warn
+          retention-days: 7
