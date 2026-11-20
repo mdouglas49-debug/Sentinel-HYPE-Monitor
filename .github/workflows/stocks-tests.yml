@@ -3,6 +3,15 @@ on:
   pull_request:
     paths: ['stocks/**', '.github/workflows/stocks-tests.yml']
   workflow_dispatch:
+    inputs:
+      run_benchmark:
+        description: Measure cold and warm full-universe scans
+        type: boolean
+        default: false
+      send_telegram_test:
+        description: Send one synthetic paper delivery test after benchmarking
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -52,7 +61,7 @@ jobs:
   full_market_benchmark:
     name: Full Market cold and warm benchmark
     needs: [verify, alpaca_preflight]
-    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'feat/full-market-pilot')
+    if: github.event_name == 'workflow_dispatch' && (inputs.run_benchmark || inputs.send_telegram_test)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -81,7 +90,7 @@ jobs:
   telegram_paper_proof:
     name: Telegram synthetic paper delivery
     needs: [verify, alpaca_preflight, full_market_benchmark]
-    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'feat/full-market-pilot')
+    if: github.event_name == 'workflow_dispatch' && inputs.send_telegram_test
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
