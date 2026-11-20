@@ -1,0 +1,80 @@
+name: Sentinel daily paper stock watchlist
+on:
+  schedule:
+    # Both UTC offsets cover Eastern daylight/standard time. Local clock and
+    # Alpaca calendar gates select one trading-day run, targeting 09:15 ET.
+    - cron: '12 13,14 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Preview only; no Telegram message or dashboard write
+        type: boolean
+        default: true
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: sentinel-daily-stocks-watchlist
+  cancel-in-progress: false
+jobs:
+  watchlist:
+    if: vars.SENTINEL_STOCKS_PAUSED != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SENTINEL_PREVIEW: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'true' || 'false' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Select the Eastern time slot
+        id: gate
+        run: python stocks/daily_watchlist.py gate
+      - name: Install Alpaca SDK
+        if: steps.gate.outputs.should_run == 'true'
+        run: python -m pip install -r stocks/requirements.txt
+      - name: Prepare the trading-day paper watchlist
+        if: steps.gate.outputs.should_run == 'true'
+        id: prepare
+        env:
+          APCA_API_KEY_ID: ${{ secrets.APCA_API_KEY_ID }}
+          APCA_API_SECRET_KEY: ${{ secrets.APCA_API_SECRET_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python stocks/daily_watchlist.py prepare
+      - name: Save the daily delivery claim before sending
+        if: steps.prepare.outputs.prepared == 'true'
+        id: claim
+        uses: actions/upload-artifact@v4
+        with:
+          name: sentinel-stocks-watchlist-claim-${{ steps.prepare.outputs.session }}
+          path: stocks-state/daily-watchlist-claim.json
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: false
+      - name: Deliver the paper watchlist to Telegram
+        if: steps.prepare.outputs.prepared == 'true' && steps.claim.outcome == 'success'
+        id: telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python stocks/daily_watchlist.py telegram
+      - name: Deliver the same event to the private dashboard when configured
+        if: ${{ !cancelled() && steps.prepare.outputs.prepared == 'true' && steps.claim.outcome == 'success' }}
+        env:
+          SENTINEL_DASHBOARD_URL: https://sentinel-hype-dashboard.chirpyfrog6.chatgpt.site
+          SENTINEL_SITES_TOKEN: ${{ secrets.SENTINEL_SITES_TOKEN }}
+        run: python stocks/daily_watchlist.py dashboard
+      - name: Summarize actual delivery state
+        if: always()
+        run: python stocks/daily_watchlist.py summary
+      - name: Save delivery metadata without watchlist contents
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sentinel-stocks-watchlist-report-${{ github.run_id }}-${{ github.run_attempt }}
+          path: stocks-state/daily-watchlist-report.json
+          if-no-files-found: warn
+          retention-days: 7

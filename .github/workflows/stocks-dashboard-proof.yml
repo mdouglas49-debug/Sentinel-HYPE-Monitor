@@ -1,0 +1,85 @@
+name: Sentinel private stocks delivery proof
+on:
+  pull_request:
+    paths: ['.github/workflows/stocks-dashboard-proof.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  verify_dashboard:
+    name: Verify same paper result on private dashboard
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Retrieve the confirmed synthetic Telegram fixture
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 44768825795
+          name: sentinel-telegram-paper-proof-44768825795-1
+          path: stocks-state/source-proof
+      - name: Verify authenticated write readback and server deduplication
+        env:
+          SENTINEL_DASHBOARD_URL: https://sentinel-hype-dashboard.chirpyfrog6.chatgpt.site
+          SENTINEL_SITES_TOKEN: ${{ secrets.SENTINEL_SITES_TOKEN }}
+        run: |
+          python - <<'PY'
+          import json,os,sys
+          from pathlib import Path
+          from urllib.parse import urlencode
+          sys.path.insert(0,'stocks')
+          from scanner import canonical,digest
+          from sites_access import call
+          def require(value,message):
+              if not value:raise RuntimeError(message)
+          report={'mode':'PAPER_ONLY','test':True,'status':'BLOCKED'}
+          try:
+              require(bool(os.environ.get('SENTINEL_SITES_TOKEN')),'Missing GitHub Actions secret: SENTINEL_SITES_TOKEN')
+              fixture=json.loads(Path('stocks-state/source-proof/paper-delivery-fixture.json').read_text())
+              proof=json.loads(Path('stocks-state/source-proof/telegram-delivery-proof.json').read_text())
+              require(proof.get('status')=='DELIVERED' and proof.get('id')==fixture.get('id') and proof.get('payload_sha256')==digest(fixture),'Source Telegram delivery was not verified')
+              require(fixture.get('mode')=='PAPER_ONLY' and fixture.get('kind')=='delivery_test' and fixture.get('test') is True and fixture.get('candidates')==[],'Only the synthetic paper fixture is allowed')
+              query='?'+urlencode({'session':fixture['session']})
+              status,_=call('GET',query=query,authenticated=False)
+              require(status in (301,302,303,307,308,401,403),'Anonymous Site access was not rejected')
+              status,_=call('GET',query=query)
+              require(status==200,'Authenticated Site read HTTP '+str(status))
+              status,receipt=call('POST',body=fixture)
+              require(status==200,'Authenticated Site write HTTP '+str(status))
+              require(receipt.get('id')==fixture['id'] and receipt.get('persisted') and receipt.get('payload_sha256')==digest(fixture),'Persisted receipt mismatch')
+              cursor=None;seen=set();found=False
+              while True:
+                  status,page=call('GET',query='?'+urlencode({'session':fixture['session'],**({'cursor':cursor} if cursor else {})}))
+                  require(status==200,'Site readback failed')
+                  found=found or fixture in page.get('events',[])
+                  cursor=page.get('cursor')
+                  if not cursor:break
+                  require(cursor not in seen and len(seen)<1000,'Invalid readback pagination');seen.add(cursor)
+              require(found,'Exact event missing from dashboard readback')
+              status,replay=call('POST',body=fixture)
+              require(status==200 and replay.get('duplicate') and replay.get('payload_sha256')==digest(fixture),'Server replay was not deduplicated')
+              report.update(status='VERIFIED',id=fixture['id'],payload_sha256=digest(fixture),telegram_message_id=proof['message_id'],readback='matched',replay='deduplicated')
+          except RuntimeError as error:report['reason']=str(error)
+          except Exception:report['reason']='Dashboard proof could not complete; inspect operation status without exposing credentials'
+          Path('stocks-state/dashboard-delivery-proof.json').write_text(canonical(report)+'\n')
+          print(canonical(report))
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as out:
+              out.write('# Private stocks delivery proof\n\n'+report['status']+'\n\n'+report.get('reason','The exact Telegram fixture was persisted, read back and deduplicated.')+'\n')
+          raise SystemExit(0 if report['status']=='VERIFIED' else 1)
+          PY
+      - name: Save credential-free dashboard receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sentinel-dashboard-paper-proof-${{ github.run_id }}-${{ github.run_attempt }}
+          path: stocks-state/dashboard-delivery-proof.json
+          if-no-files-found: warn
+          retention-days: 7

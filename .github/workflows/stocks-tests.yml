@@ -1,0 +1,168 @@
+name: Full Market paper pilot checks
+on:
+  pull_request:
+    paths: ['stocks/**', '.github/workflows/stocks-tests.yml']
+  workflow_dispatch:
+    inputs:
+      run_benchmark:
+        description: Measure cold and warm full-universe scans
+        type: boolean
+        default: false
+      send_telegram_test:
+        description: Send one synthetic paper delivery test after benchmarking
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install official Alpaca SDK
+        run: python -m pip install -r stocks/requirements.txt
+      - name: Verify isolated paper scanner
+        run: python -m unittest discover -s stocks -p 'test_*.py'
+
+  alpaca_preflight:
+    name: Alpaca paper authentication
+    needs: verify
+    # Same-repository PRs and explicit owner runs only. Forks receive no keys.
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install official Alpaca SDK
+        run: python -m pip install -r stocks/requirements.txt
+      - name: Verify paper calendar and market data
+        env:
+          APCA_API_KEY_ID: ${{ secrets.APCA_API_KEY_ID }}
+          APCA_API_SECRET_KEY: ${{ secrets.APCA_API_SECRET_KEY }}
+        run: python stocks/preflight.py
+      - name: Save credential-free preflight report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sentinel-alpaca-preflight-${{ github.run_id }}-${{ github.run_attempt }}
+          path: stocks-state/alpaca-preflight.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  full_market_benchmark:
+    name: Full Market cold and warm benchmark
+    needs: [verify, alpaca_preflight]
+    if: github.event_name == 'workflow_dispatch' && (inputs.run_benchmark || inputs.send_telegram_test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install official Alpaca SDK
+        run: python -m pip install -r stocks/requirements.txt
+      - name: Measure full universe without publishing signals
+        env:
+          APCA_API_KEY_ID: ${{ secrets.APCA_API_KEY_ID }}
+          APCA_API_SECRET_KEY: ${{ secrets.APCA_API_SECRET_KEY }}
+        run: python stocks/benchmark.py
+      - name: Save timing and coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sentinel-full-market-benchmark-${{ github.run_id }}-${{ github.run_attempt }}
+          path: stocks-state/full-market-benchmark.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  telegram_paper_proof:
+    name: Telegram synthetic paper delivery
+    needs: [verify, alpaca_preflight, full_market_benchmark]
+    if: github.event_name == 'workflow_dispatch' && inputs.send_telegram_test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate bot and prepare exact paper fixture
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python stocks/telegram_proof.py prepare
+      # Immutable claim is uploaded before the external send. A rerun of this
+      # same run ID cannot upload that name again while retained and stops here.
+      # Ambiguous sends require reconciliation, never an automatic replay.
+      - name: Reserve the single delivery attempt
+        uses: actions/upload-artifact@v4
+        with:
+          name: sentinel-telegram-delivery-claim-${{ github.run_id }}
+          path: stocks-state/telegram-delivery-claim.json
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: false
+      - name: Send synthetic paper result and verify restart deduplication
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python stocks/telegram_proof.py send
+      - name: Save paper fixture and receipt without credentials
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sentinel-telegram-paper-proof-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            stocks-state/paper-delivery-fixture.json
+            stocks-state/telegram-delivery-proof.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  daily_watchlist_preview:
+    name: Daily watchlist real-data preview without delivery
+    needs: [verify, alpaca_preflight]
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Alpaca SDK
+        run: python -m pip install -r stocks/requirements.txt
+      - name: Preview actual watchlist preparation without sending
+        env:
+          SENTINEL_PREVIEW: 'true'
+          APCA_API_KEY_ID: ${{ secrets.APCA_API_KEY_ID }}
+          APCA_API_SECRET_KEY: ${{ secrets.APCA_API_SECRET_KEY }}
+        run: python stocks/daily_watchlist.py prepare
+      - name: Summarize actual preview
+        if: always()
+        env:
+          SENTINEL_PREVIEW: 'true'
+        run: python stocks/daily_watchlist.py summary
+      - name: Save metadata only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sentinel-daily-watchlist-preview-${{ github.run_id }}-${{ github.run_attempt }}
+          path: stocks-state/daily-watchlist-report.json
+          if-no-files-found: warn
+          retention-days: 7

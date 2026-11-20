@@ -72,3 +72,7 @@ Commands carry a unique ID and requested timestamp, survive in the checkpoint, a
 An emergency stop blocks controlled entries and models exits at the first full-minute open after the command, with fees/slippage. It can be delayed by GitHub or missing history. Repeated stop commands preserve the earliest stop time. Resume requires all stopped positions to be closed; there is no live exchange kill switch. Existing independent simulations and Telegram remain unaffected.
 
 Run `node test-paper-risk.mjs` for position limits, stop risk, daily cutoff, missing data, emergency timing, idempotence, and resume checks. The workflow verifies both accounting and risk before running. It attempts journal maintenance even if the signal scan fails; only validated successful journal uploads are restored.
+
+## Full Market stocks pilot
+
+The isolated, paper-only U.S. stock pilot lives in [stocks/README.md](stocks/README.md). It does not change the HYPE workflow. Market access, full-universe timing and unattended scheduling must pass their readiness checks before the 09:15 brief is treated as operational.
