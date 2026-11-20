@@ -1,0 +1,58 @@
+name: One-off November 20 noon paper brief
+on:
+  pull_request:
+    paths: ['stocks/noon_brief.py', 'stocks/noon-report-public.pem', '.github/workflows/stocks-noon-brief.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: sentinel-noon-paper-2026-11-20
+  cancel-in-progress: false
+jobs:
+  noon:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install market-data and private-report libraries
+        run: python -m pip install -r stocks/requirements.txt cryptography
+      - name: Build noon review with encrypted report output
+        env:
+          APCA_API_KEY_ID: ${{ secrets.APCA_API_KEY_ID }}
+          APCA_API_SECRET_KEY: ${{ secrets.APCA_API_SECRET_KEY }}
+        run: python stocks/noon_brief.py build
+      - name: Check whether this noon delivery was already attempted
+        id: guard
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import json,os,sys
+          sys.path.insert(0,'stocks')
+          from scanner import request
+          url='https://api.github.com/repos/mdouglas49-debug/Sentinel-HYPE-Monitor/actions/artifacts?name=sentinel-noon-paper-claim-2026-11-20&per_page=100'
+          raw,_=request(url,{'Authorization':'Bearer '+os.environ['GITHUB_TOKEN'],'Accept':'application/vnd.github+json'})
+          attempted=any(a.get('name')=='sentinel-noon-paper-claim-2026-11-20' and not a.get('expired') for a in json.loads(raw).get('artifacts',[]))
+          with open(os.environ['GITHUB_OUTPUT'],'a') as out:out.write('send='+str(not attempted).lower()+'\n')
+          PY
+      - name: Reserve this single noon delivery attempt
+        if: steps.guard.outputs.send == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sentinel-noon-paper-claim-2026-11-20
+          path: stocks-state/noon-claim.json
+          retention-days: 7
+          overwrite: false
+      - name: Deliver noon watchlist and reconstructed morning review
+        if: steps.guard.outputs.send == 'true'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python stocks/noon_brief.py send
