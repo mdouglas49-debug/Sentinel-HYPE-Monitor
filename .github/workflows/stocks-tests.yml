@@ -131,3 +131,38 @@ jobs:
             stocks-state/telegram-delivery-proof.json
           if-no-files-found: warn
           retention-days: 7
+
+  daily_watchlist_preview:
+    name: Daily watchlist real-data preview without delivery
+    needs: [verify, alpaca_preflight]
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Alpaca SDK
+        run: python -m pip install -r stocks/requirements.txt
+      - name: Preview actual watchlist preparation without sending
+        env:
+          SENTINEL_PREVIEW: 'true'
+          APCA_API_KEY_ID: ${{ secrets.APCA_API_KEY_ID }}
+          APCA_API_SECRET_KEY: ${{ secrets.APCA_API_SECRET_KEY }}
+        run: python stocks/daily_watchlist.py prepare
+      - name: Summarize actual preview
+        if: always()
+        env:
+          SENTINEL_PREVIEW: 'true'
+        run: python stocks/daily_watchlist.py summary
+      - name: Save metadata only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sentinel-daily-watchlist-preview-${{ github.run_id }}-${{ github.run_attempt }}
+          path: stocks-state/daily-watchlist-report.json
+          if-no-files-found: warn
+          retention-days: 7

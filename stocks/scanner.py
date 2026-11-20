@@ -266,6 +266,13 @@ def message(e):
     title = 'Sentinel AI - Full Market | PAPER ONLY' + (' | SYNTHETIC TEST' if e.get('test') else '')
     lines = [title, f"Event: {e['id']}", f"Session: {e['session']} | {e['kind']}", f"Data cutoff: {e.get('cutoff') or 'NONE - fixture, no market data'}", f"Feed: {e.get('feed', 'NONE')}"]
     if e.get('test'): lines.append('Delivery test only. No market candidates or trade results.')
+    if e['kind']=='watchlist':
+        c=e.get('coverage',{});excluded=c.get('excluded',{})
+        stale=sum(reason=='stale_premarket' for reason in excluded.values())
+        lines.append(f"Premarket bars: {c.get('with_premarket_bars',0)}/{c.get('requested',0)}; stale excluded: {stale}; eligible: {c.get('eligible',0)}")
+        lines.append('Pilot universe uses community S&P 500 and Nasdaq-100 constituent lists.')
+        if e.get('created_at'):lines.append('Scan started: '+parse(e['created_at']).astimezone(ET).strftime('%I:%M:%S %p %Z'))
+        if not e.get('candidates'):lines.append('No candidates met the pilot rules at this data cutoff.')
     for c in e.get('candidates', []):
         lines.extend([f"{c['symbol']} | trigger {c['trigger']:.2f} | paper stop {c['stop']:.2f} | target {c['target']:.2f}", c['reason'], 'News: ' + (c['catalyst']['url'] if c.get('catalyst') else 'unverified')])
     if e['kind'] == 'breakout':
