@@ -1,0 +1,44 @@
+name: Full Market stock timer wake-up
+on:
+  workflow_run:
+    workflows: ['Sentinel HYPE read-only scan']
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+  pull_request:
+    paths: ['stocks/wakeup.py', 'stocks/test_wakeup.py', '.github/workflows/stocks-wakeup.yml']
+permissions:
+  contents: read
+  actions: write
+concurrency:
+  group: sentinel-stocks-wakeup
+  cancel-in-progress: false
+jobs:
+  wake:
+    # Only two possible Eastern morning hours and the :10-:19 interval need a
+    # runner. Python checks the actual current NY time before any real dispatch.
+    if: >-
+      vars.SENTINEL_STOCKS_PAUSED != 'true' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+       (github.event_name == 'workflow_run' &&
+        (contains(github.event.workflow_run.created_at, 'T13:1') || contains(github.event.workflow_run.created_at, 'T14:1'))))
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      # Never check out the triggering HYPE run or a workflow_run artifact.
+      # Automatic wake-ups execute the trusted main branch only.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.sha || 'main' }}
+          persist-credentials: false
+      - name: Wake the daily paper workflow or probe preview dispatch
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PROBE_ONLY: ${{ github.event_name != 'workflow_run' && 'true' || 'false' }}
+        run: |
+          if [ "$PROBE_ONLY" = "true" ]; then
+            python3 stocks/wakeup.py --probe
+          else
+            python3 stocks/wakeup.py
+          fi
