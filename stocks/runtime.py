@@ -217,6 +217,11 @@ def monitor(session):
     finish = at(session, '10:47')
     if not live_window(now):
         raise RuntimeError('Monitor window is over; no stale automated alerts')
+    # Load after the open, so the morning sender can finish checkpointing both
+    # channel receipts while this runner waits. Holding a 09:15 SHA until 09:30
+    # would otherwise create a stale-writer conflict on the first alert.
+    while datetime.now(UTC) < at(session, '09:30'):
+        time.sleep(min(20, max(0, (at(session,'09:30')-datetime.now(UTC)).total_seconds())))
     w, journal, store = open_context(ROOT / 'monitor-journal.sqlite', session)
     api = Alpaca()
     failures = 0
