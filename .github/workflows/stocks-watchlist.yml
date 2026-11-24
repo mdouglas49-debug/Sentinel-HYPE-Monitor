@@ -11,7 +11,7 @@ on:
         type: boolean
         default: true
 permissions:
-  contents: read
+  contents: write
   actions: read
 concurrency:
   group: sentinel-daily-stocks-watchlist
@@ -23,6 +23,7 @@ jobs:
     timeout-minutes: 20
     env:
       SENTINEL_PREVIEW: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'true' || 'false' }}
+      SENTINEL_DURABLE_STATE: 'true'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -54,18 +55,29 @@ jobs:
           if-no-files-found: error
           retention-days: 7
           overwrite: false
+      - name: Save encrypted watchlist and journal for the post-open monitor
+        id: checkpoint
+        if: steps.prepare.outputs.prepared == 'true' && steps.claim.outcome == 'success'
+        env:
+          APCA_API_SECRET_KEY: ${{ secrets.APCA_API_SECRET_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python stocks/runtime.py seed
       - name: Deliver the paper watchlist to Telegram
         if: steps.prepare.outputs.prepared == 'true' && steps.claim.outcome == 'success'
         id: telegram
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          APCA_API_SECRET_KEY: ${{ secrets.APCA_API_SECRET_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: python stocks/daily_watchlist.py telegram
       - name: Deliver the same event to the private dashboard when configured
-        if: ${{ !cancelled() && steps.prepare.outputs.prepared == 'true' && steps.claim.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.prepare.outputs.prepared == 'true' && steps.claim.outcome == 'success' && steps.checkpoint.outcome == 'success' }}
         env:
           SENTINEL_DASHBOARD_URL: https://sentinel-hype-dashboard.chirpyfrog6.chatgpt.site
           SENTINEL_SITES_TOKEN: ${{ secrets.SENTINEL_SITES_TOKEN }}
+          APCA_API_SECRET_KEY: ${{ secrets.APCA_API_SECRET_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: python stocks/daily_watchlist.py dashboard
       - name: Summarize actual delivery state
         if: always()

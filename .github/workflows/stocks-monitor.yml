@@ -1,0 +1,59 @@
+name: Full Market automated paper monitor
+on:
+  workflow_run:
+    # The daily completion starts monitoring. The independent HYPE heartbeat
+    # also permits recovery if a runner fails; HYPE itself is unchanged.
+    workflows: ['Sentinel daily paper stock watchlist', 'Sentinel HYPE read-only scan']
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: sentinel-stocks-paper-monitor
+  cancel-in-progress: false
+jobs:
+  monitor:
+    if: >-
+      vars.SENTINEL_STOCKS_PAUSED != 'true' &&
+      (github.event_name == 'workflow_dispatch' ||
+       contains(github.event.workflow_run.created_at, 'T13:') ||
+       contains(github.event.workflow_run.created_at, 'T14:') ||
+       contains(github.event.workflow_run.created_at, 'T15:'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 105
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install read-only Alpaca SDK and state encryption
+        run: python -m pip install -r stocks/requirements.txt
+      - name: Require an active Eastern window and durable watchlist
+        id: gate
+        env:
+          APCA_API_SECRET_KEY: ${{ secrets.APCA_API_SECRET_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python stocks/runtime.py gate
+      - name: Monitor completed one-minute candles and reconcile paper outcomes
+        if: steps.gate.outputs.should_run == 'true'
+        env:
+          APCA_API_KEY_ID: ${{ secrets.APCA_API_KEY_ID }}
+          APCA_API_SECRET_KEY: ${{ secrets.APCA_API_SECRET_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SENTINEL_DASHBOARD_URL: https://sentinel-hype-dashboard.chirpyfrog6.chatgpt.site
+          SENTINEL_SITES_TOKEN: ${{ secrets.SENTINEL_SITES_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python -u stocks/runtime.py monitor
+      - name: Save monitor metadata without picks or credentials
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sentinel-stock-monitor-report-${{ github.run_id }}-${{ github.run_attempt }}
+          path: stocks-state/monitor-report.json
+          if-no-files-found: ignore
+          retention-days: 7
