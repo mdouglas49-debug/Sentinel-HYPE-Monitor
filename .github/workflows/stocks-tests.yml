@@ -153,6 +153,11 @@ jobs:
           APCA_API_KEY_ID: ${{ secrets.APCA_API_KEY_ID }}
           APCA_API_SECRET_KEY: ${{ secrets.APCA_API_SECRET_KEY }}
         run: python stocks/daily_watchlist.py prepare
+      - name: Verify post-open processing without messages or production state changes
+        env:
+          APCA_API_KEY_ID: ${{ secrets.APCA_API_KEY_ID }}
+          APCA_API_SECRET_KEY: ${{ secrets.APCA_API_SECRET_KEY }}
+        run: python stocks/runtime.py data-proof
       - name: Summarize actual preview
         if: always()
         env:
@@ -166,3 +171,25 @@ jobs:
           path: stocks-state/daily-watchlist-report.json
           if-no-files-found: warn
           retention-days: 7
+
+  encrypted_state_proof:
+    name: Encrypted journal authenticated write and readback
+    needs: verify
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r stocks/requirements.txt
+      - name: Write and reopen an isolated encrypted synthetic checkpoint
+        env:
+          APCA_API_SECRET_KEY: ${{ secrets.APCA_API_SECRET_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python stocks/runtime.py state-proof

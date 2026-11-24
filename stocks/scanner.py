@@ -90,13 +90,14 @@ class Alpaca:
         return result, pages
 
 class Journal:
-    def __init__(self, filename):
+    def __init__(self, filename, checkpoint=None):
         Path(filename).parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(filename)
         self.db.execute('PRAGMA journal_mode=WAL')
         self.db.execute('CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY, payload TEXT NOT NULL)')
         self.db.execute('CREATE TABLE IF NOT EXISTS delivery(id TEXT, channel TEXT, status TEXT, receipt TEXT, PRIMARY KEY(id,channel))')
         self.db.commit()
+        self.checkpoint = checkpoint
     def add(self, event):
         old = self.db.execute('SELECT payload FROM events WHERE id=?', (event['id'],)).fetchone()
         if old and old[0] != canonical(event): raise RuntimeError('Event ID reused with different content')
@@ -110,8 +111,10 @@ class Journal:
             c = self.db.execute('INSERT OR IGNORE INTO delivery VALUES(?,?,?,NULL)', (delivery_id, channel, 'UNKNOWN'))
         if not c.rowcount:
             return self.db.execute('SELECT status,receipt FROM delivery WHERE id=? AND channel=?', (delivery_id, channel)).fetchone()
+        if self.checkpoint: self.checkpoint(self)
         receipt = sender(event)
         with self.db: self.db.execute('UPDATE delivery SET status=?,receipt=? WHERE id=? AND channel=?', ('CONFIRMED', canonical(receipt), delivery_id, channel))
+        if self.checkpoint: self.checkpoint(self)
         return 'CONFIRMED', receipt
 
 
@@ -184,14 +187,17 @@ def scan(api, symbols, membership, session, cache, now=None):
 def confirmations(candidate, bars, end, baseline, session, feed):
     result = []
     previous_close = None
+    previous_time = None
     for b in bars:
         t = parse(b['t']); minute = t.astimezone(ET).strftime('%H:%M')
         if not at(session, '09:30') <= t or t + timedelta(minutes=1) > end: continue
         base = baseline.get(minute)
-        through = (previous_close if previous_close is not None else b['o']) <= candidate['trigger'] < b['c']
+        adjacent = previous_time is not None and t - previous_time == timedelta(minutes=1)
+        through = (previous_close if adjacent else b['o']) <= candidate['trigger'] < b['c']
         if through and base and b['v'] >= base * 1.5:
             result.append({'bar_at': b['t'], 'close': b['c'], 'volume': b['v'], 'baseline': base, 'feed': feed})
         previous_close = b['c']
+        previous_time = t
     return result
 
 def outcome(candidate, confirmation, bars, end, window_end):
@@ -211,7 +217,7 @@ def outcome(candidate, confirmation, bars, end, window_end):
     if next_time < min(end, window_end): return {'state': 'UNVERIFIED', 'reason': 'missing trailing minute bars', 'entry': entry}
     return {'state': 'OPEN_AT_WINDOW_END' if end >= window_end else 'OPEN', 'asof': iso(end), 'entry': entry}
 
-def monitor_once(api, watchlist, journal, cache, now=None, window='10:30'):
+def monitor_once(api, watchlist, journal, cache, now=None, window='10:30', feeds=('iex','sip')):
     now = now or datetime.now(UTC); session = watchlist['session']; symbols = [c['symbol'] for c in watchlist['candidates']]
     if not symbols: return []
     end_window = at(session, window)
@@ -220,7 +226,7 @@ def monitor_once(api, watchlist, journal, cache, now=None, window='10:30'):
     if len(past) < 5: raise RuntimeError('Insufficient volume baseline sessions')
     results = []; cache = Path(cache); cache.mkdir(parents=True, exist_ok=True)
     existing = journal.events(); evidence = {}
-    for feed in ('iex', 'sip'):
+    for feed in feeds:
         end = min(end_window, (now - (timedelta(minutes=15, seconds=5) if feed == 'sip' else timedelta(seconds=5))).replace(second=0, microsecond=0))
         if end <= at(session, '09:30'): continue
         history = []
@@ -253,7 +259,7 @@ def monitor_once(api, watchlist, journal, cache, now=None, window='10:30'):
             journal.add(result); results.append(result)
     for c in watchlist['candidates']:
         hits = {f: next((e for e in existing if e['kind'] == 'breakout' and e['watchlist_id'] == watchlist['id'] and e['candidate']['symbol'] == c['symbol'] and e['feed'] == f), None) for f in ('iex', 'sip')}
-        if now >= end_window + timedelta(minutes=16):
+        if now >= end_window + timedelta(minutes=16) and set(feeds)=={'iex','sip'}:
             comparison = event('comparison', session, {'watchlist_id': watchlist['id'], 'symbol': c['symbol'], 'iex': hits['iex']['confirmation'] if hits['iex'] else None, 'sip': hits['sip']['confirmation'] if hits['sip'] else None, 'coverage':{f:evidence.get((f,c['symbol']),{}) for f in ('iex','sip')}, 'status': 'UNVERIFIED' if not all(evidence.get((f,c['symbol']),{}).get('complete') for f in ('iex','sip')) else 'BOTH' if all(hits.values()) else 'IEX_ONLY' if hits['iex'] else 'SIP_ONLY' if hits['sip'] else 'NEITHER', 'cutoff': iso(end_window)})
             journal.add(comparison); results.append(comparison)
             for feed in ('iex','sip'):
@@ -277,6 +283,9 @@ def message(e):
         lines.extend([f"{c['symbol']} | trigger {c['trigger']:.2f} | paper stop {c['stop']:.2f} | target {c['target']:.2f}", c['reason'], 'News: ' + (c['catalyst']['url'] if c.get('catalyst') else 'unverified')])
     if e['kind'] == 'breakout':
         c=e['candidate']; lines.append(f"Candle opened: {e['confirmation']['bar_at']} | observed: {e['observed_at']}"); lines.append(f"{c['symbol']} completed 1m close {e['confirmation']['close']:.2f} through {c['trigger']:.2f}; paper stop {c['stop']:.2f}; target {c['target']:.2f}")
+        lines.append(f"Volume: {e['confirmation']['volume']} vs same-minute baseline {e['confirmation']['baseline']:.1f}; minimum 1.5x")
+        if e['feed']=='sip':lines.append('DELAYED CONSOLIDATED CONFIRMATION: data arrives at least 15 minutes later. This is not a live IEX alert.')
+    if e['kind']=='outcome':lines.append(f"{e['symbol']} | {e['outcome']['state']} | paper journal; fees and slippage excluded")
     lines.append('IEX is one exchange; alerts and volume can differ from consolidated SIP.')
     return '\n'.join(lines)
 

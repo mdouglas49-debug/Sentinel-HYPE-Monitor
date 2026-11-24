@@ -19,14 +19,25 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Retrieve the confirmed synthetic Telegram fixture
-        uses: actions/download-artifact@v4
-        with:
-          github-token: ${{ github.token }}
-          run-id: 44768825795
-          name: sentinel-telegram-paper-proof-44768825795-1
-          path: stocks-state/source-proof
+      - name: Check the repository credential binding
+        id: access
+        env:
+          SENTINEL_SITES_TOKEN: ${{ secrets.SENTINEL_SITES_TOKEN }}
+        run: |
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          ready=bool(os.environ.get('SENTINEL_SITES_TOKEN'))
+          with open(os.environ['GITHUB_OUTPUT'],'a') as output:output.write('ready='+str(ready).lower()+'\n')
+          if not ready:
+              Path('stocks-state').mkdir(exist_ok=True)
+              report={'mode':'PAPER_ONLY','test':True,'status':'PENDING_CREDENTIAL','reason':'Missing GitHub Actions secret: SENTINEL_SITES_TOKEN; authentication has not been tested'}
+              Path('stocks-state/dashboard-delivery-proof.json').write_text(json.dumps(report)+'\n')
+              print(json.dumps(report))
+              with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as output:output.write('# Dashboard verification\n\nPENDING_CREDENTIAL: SENTINEL_SITES_TOKEN. No authenticated write was attempted.\n')
+          PY
       - name: Verify authenticated write readback and server deduplication
+        if: steps.access.outputs.ready == 'true'
         env:
           SENTINEL_DASHBOARD_URL: https://sentinel-hype-dashboard.chirpyfrog6.chatgpt.site
           SENTINEL_SITES_TOKEN: ${{ secrets.SENTINEL_SITES_TOKEN }}
@@ -37,14 +48,18 @@ jobs:
           from urllib.parse import urlencode
           sys.path.insert(0,'stocks')
           from scanner import canonical,digest
+          from telegram_proof import fixture as telegram_fixture
           from sites_access import call
           def require(value,message):
               if not value:raise RuntimeError(message)
           report={'mode':'PAPER_ONLY','test':True,'status':'BLOCKED'}
           try:
               require(bool(os.environ.get('SENTINEL_SITES_TOKEN')),'Missing GitHub Actions secret: SENTINEL_SITES_TOKEN')
-              fixture=json.loads(Path('stocks-state/source-proof/paper-delivery-fixture.json').read_text())
-              proof=json.loads(Path('stocks-state/source-proof/telegram-delivery-proof.json').read_text())
+              # Deterministically recover the exact previously delivered synthetic
+              # fixture; its recorded payload hash prevents artifact expiry from
+              # changing the test or causing another Telegram message.
+              fixture=telegram_fixture('44768825795','2026-11-20')
+              proof=json.loads(Path('stocks/verification/2026-11-20.json').read_text())['telegram']
               require(proof.get('status')=='DELIVERED' and proof.get('id')==fixture.get('id') and proof.get('payload_sha256')==digest(fixture),'Source Telegram delivery was not verified')
               require(fixture.get('mode')=='PAPER_ONLY' and fixture.get('kind')=='delivery_test' and fixture.get('test') is True and fixture.get('candidates')==[],'Only the synthetic paper fixture is allowed')
               query='?'+urlencode({'session':fixture['session']})
@@ -69,6 +84,7 @@ jobs:
               report.update(status='VERIFIED',id=fixture['id'],payload_sha256=digest(fixture),telegram_message_id=proof['message_id'],readback='matched',replay='deduplicated')
           except RuntimeError as error:report['reason']=str(error)
           except Exception:report['reason']='Dashboard proof could not complete; inspect operation status without exposing credentials'
+          Path('stocks-state').mkdir(exist_ok=True)
           Path('stocks-state/dashboard-delivery-proof.json').write_text(canonical(report)+'\n')
           print(canonical(report))
           with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as out:

@@ -73,10 +73,19 @@ def validate_watchlist(e,now):
     if len(e.get('candidates',[]))>5:raise RuntimeError('Shortlist exceeds pilot size')
     if now>=at(e['session'],'09:30'):raise RuntimeError('Premarket delivery window was missed; no stale brief sent')
 
+def delivery_journal(expected):
+    if os.environ.get('SENTINEL_DURABLE_STATE') == 'true':
+        from runtime import open_context
+        w,journal,_=open_context(ROOT/'daily-journal.sqlite')
+        if w!=expected:
+            journal.db.close();raise RuntimeError('Delivery does not match the durable watchlist')
+        return journal
+    return Journal(str(ROOT/'daily-journal.sqlite'))
+
 def send_telegram(e,report,sender=telegram,clock=now_utc,wait=wait_until):
     current=clock();validate_watchlist(e,current)
     current=wait(at(e['session'],'09:15'));validate_watchlist(e,current)
-    journal=Journal(str(ROOT/'daily-journal.sqlite'))
+    journal=delivery_journal(e)
     status,receipt=journal.deliver(e,'telegram',sender);journal.db.close()
     if status!='CONFIRMED':raise RuntimeError('Telegram attempt is UNKNOWN; automatic resend is disabled')
     receipt=json.loads(receipt) if isinstance(receipt,str) else receipt
@@ -88,7 +97,7 @@ def send_telegram(e,report,sender=telegram,clock=now_utc,wait=wait_until):
 def send_dashboard(e,report):
     if not os.environ.get('SENTINEL_SITES_TOKEN'):
         report['dashboard']={'status':'PENDING_CREDENTIAL','reason':'GitHub Actions secret SENTINEL_SITES_TOKEN is missing'};return report
-    journal=Journal(str(ROOT/'daily-journal.sqlite'))
+    journal=delivery_journal(e)
     status,receipt=journal.deliver(e,'dashboard',dashboard);journal.db.close()
     if status!='CONFIRMED':raise RuntimeError('Dashboard attempt is UNKNOWN; reconcile before retrying')
     receipt=json.loads(receipt) if isinstance(receipt,str) else receipt
